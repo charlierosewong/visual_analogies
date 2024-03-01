@@ -12,7 +12,7 @@ Next index: define starting index of new stimuli to standardize naming
 Trials: trials to run, leave as None if max trials is preferred
 
 Transformations:
-"Counting": Apply a mathematical operation
+"Counting": Apply a mathematical operation (addition, subtraction, multiplication, division)
     Parameters: 
         "+1","+2","+3",
         "-1","-2","-3",
@@ -88,6 +88,11 @@ elif trials <= sublist_len and trials > 0:
     train_1,train_2,test = create_sets(trials)
 else:
     raise ValueError(f"The maximum number of trials possible is {sublist_len}.")
+
+def save_mc(mc1,mc2):
+    with open("output.txt", "w") as file:
+            file.write(f'mc_1: {mc1}\n')
+            file.write(f'mc_2: {mc2}\n')
 
 def crop(image_input):
     if isinstance(image_input, str):
@@ -205,8 +210,6 @@ def colour_change(img_path, colour_name):
                     pixels[x, y] = original_pixel
     return result_img
 
-
-
 def count_builder(oper):
     if oper not in operations:
         raise ValueError("Invalid Parameter")
@@ -220,21 +223,25 @@ def count_builder(oper):
     if oper.startswith('x'):
         starting = [1,2,3]
         math = mul
-        math_op = math_operations['x']
-        math_op_2 = math_operations['x']
+        math_op_name = math_op_2_name = 'x'
+        math_op = math_op_2 = math_operations['x']
         mc1 = selector(num, math, 1)[0]
         mc2 = 4
     elif oper.startswith('+'):
         starting = [1,2,3,4,5]
         math = add
+        math_op_name = math_op_2_name = '+'
         math_op = math_op_2 = math_operations['+']
         mc1, mc2 = selector(num, math, 2)
     elif oper.startswith('-'):
         starting = [9,8,7,6,5]
         math = sub
+        math_op_name = math_op_2_name = '-'
         math_op = math_op_2 = math_operations['-']
         mc1, mc2 = selector(num, math, 2)
     else:
+        math_op_name = 'd'
+        math_op_2_name = '+'
         math_op = math_operations['d']
         math_op_2 = math_operations['+']
         math = div
@@ -250,6 +257,7 @@ def count_builder(oper):
     test_out = math_op(test_0, num)
     test_mc1_out = math_op_2(test_0,mc1)
     test_mc2_out = math_op_2(test_0,mc2)
+    save_mc(math_op_name+str(mc1),math_op_2_name+str(mc2))
     return (train1,train1_out,train2,train2_out,test_0,test_out,test_mc1_out,test_mc2_out) 
     
 def count_generator(img_path, num):
@@ -280,19 +288,20 @@ def transform_save_count(index, param, next_index=0):
     save_image(inputs, "Counting", param, index + next_index, suffixes)
     
 def transform_save_colour(index, param, inputs, next_index):
-    processed_train1_in = colour_change(train_1[index], inputs[0])
-    processed_train1_out = colour_change(train_1[index], param)
-    processed_train2_in = colour_change(train_2[index],inputs[1])
-    processed_train2_out = colour_change(train_2[index], param)
+    processed_1_in = colour_change(train_1[index], inputs[0])
+    processed_1_out = colour_change(train_1[index], param)
+    processed_2_in = colour_change(train_2[index],inputs[1])
+    processed_2_out = colour_change(train_2[index], param)
     processed_test = colour_change(test[index], inputs[2])
-    processed_test_mc_0 = colour_change(test[index], param)
-    processed_test_mc_1 = colour_change(test[index], inputs[3])
-    processed_test_mc_2 = colour_change(test[index], inputs[4])
+    processed_mc_0 = colour_change(test[index], param)
+    processed_mc_1 = colour_change(test[index], inputs[3])
+    processed_mc_2 = colour_change(test[index], inputs[4])
     save_inputs = (
-        processed_train1_in, processed_train1_out, processed_train2_in, processed_train2_out,
-        processed_test, processed_test_mc_0, processed_test_mc_1, processed_test_mc_2
+        processed_1_in, processed_1_out, processed_2_in, processed_2_out,
+        processed_test, processed_mc_0, processed_mc_1, processed_mc_2
         )
     save_image(save_inputs,"Colour", param, index+next_index, suffixes)
+    save_mc(inputs[3],inputs[4])
     
 def transform_save_resize(index, param, inputs, next_index):
     processed_1_in = resize(train_1[index], param, original=True)
@@ -308,6 +317,7 @@ def transform_save_resize(index, param, inputs, next_index):
         processed_test, processed_mc_0, processed_mc_1, processed_mc_2
         )
     save_image(save_inputs, "Resize", param, index+next_index, suffixes)
+    save_mc(inputs[0],inputs[1])
 
 def transform_save_reflect(index, param, false_axis, angle, next_index):
     processed_1 = reflect_image(train_1[index], param)
@@ -320,21 +330,23 @@ def transform_save_reflect(index, param, false_axis, angle, next_index):
         test[index], processed_mc_0, processed_mc_1, processed_mc_2
         )
     save_image(save_inputs, "Reflect", param, index+next_index, suffixes)
+    save_mc(false_axis,angle)
 
 def transform_save_rotate(index, param, inputs, next_index):
-    processed_train1_in = rotate_image(train_1[index], inputs[0])
-    processed_train1_out = rotate_image(train_1[index], inputs[0]+param)
-    processed_train2_in = rotate_image(train_2[index],inputs[1])
-    processed_train2_out = rotate_image(train_2[index], inputs[1]+param)
+    processed_1_in = rotate_image(train_1[index], inputs[0])
+    processed_1_out = rotate_image(train_1[index], inputs[0]+param)
+    processed_2_in = rotate_image(train_2[index],inputs[1])
+    processed_2_out = rotate_image(train_2[index], inputs[1]+param)
     processed_test = rotate_image(test[index], inputs[2])
-    processed_test_mc_0 = rotate_image(test[index], inputs[2]+param)
-    processed_test_mc_1 = rotate_image(test[index], inputs[2]+inputs[3])
-    processed_test_mc_2 = rotate_image(test[index], inputs[2]+inputs[4])
+    processed_mc_0 = rotate_image(test[index], inputs[2]+param)
+    processed_mc_1 = rotate_image(test[index], inputs[2]+inputs[3])
+    processed_mc_2 = rotate_image(test[index], inputs[2]+inputs[4])
     save_inputs = (
-        processed_train1_in, processed_train1_out, processed_train2_in, processed_train2_out,
-        processed_test, processed_test_mc_0, processed_test_mc_1, processed_test_mc_2
+        processed_1_in, processed_1_out, processed_2_in, processed_2_out,
+        processed_test, processed_mc_0, processed_mc_1, processed_mc_2
         )
     save_image(save_inputs,"2DRotation", param, index+next_index, suffixes)
+    save_mc(inputs[3],inputs[4])
 
 
 if transformation not in transformation:
