@@ -2,7 +2,8 @@ from PIL import Image
 from io import BytesIO
 import random
 import os
-import numpy as np
+import re
+import operator
 
 '''
 Input directory: directory with stimuli to be transformed
@@ -11,37 +12,56 @@ Next index: define starting index of new stimuli to standardize naming
 Trials: trials to run, leave as None if max trials is preferred
 
 Transformations:
-"Counting"
-    Parameters: "+1","+2","+3","x3","-1","-2","-3","/2","/3"
-"Resize"
-    Parameters: 1/4, 1/3, 1/2, 3/4, 2, 3, 4, 5
-"Colour"
-    Parameters: "Red", "Yellow", "Green", "Blue"
-"Reflect"
-    Parameters: "X", "Y"
-"2DRotation"
-    Parameters: 30, 60, 90, 120, 210, 240, 270, 300, 330, 360
+"Counting": Apply a mathematical operation
+    Parameters: 
+        "+1","+2","+3",
+        "-1","-2","-3",
+        "x2","x3",
+        "d2","d3"
+        
+"Resize": Resize horizontally(X), vertically(Y), or both ways(XY)
+    Parameters: 
+        "0.5X", "0.5Y", "0.5XY", 
+        "2X", "2Y", "2XY"
+        
+"Colour": Colour Change
+    Parameters: 
+        "Red", "Orange, "Yellow", "Green", "Blue", "Purple"
+        
+"Reflect": Reflect along the X or Y axis
+    Parameters: 
+        "X", "Y"
+        
+"2DRotation": Rotate clockwise(+) by a certain degree
+    Parameters: 
+        45, 90, 135,180
 '''
 
-input_directory = "/Users/charliewong/Downloads/RRRObjects"
-output_directory = "/Users/charliewong/Downloads/test"
+input_directory = " "
+output_directory = " "
 next_index = 0
 trials = None
 transformation = " "
-parameter = None
+parameter = " "
 
 # ------------------------------------------------------------------------------------------------
 
-angles = [30, 60, 90, 120, 210, 240, 270, 300, 330, 360]
-factors = [1/4,1/3,1/2,3/4,2,3,4,5]
-operations_1 = ["+1","+2","+3","x3"]
-operations_2 = ["-1","-2","-3","/2","/3"]
-colours = ["Red","Yellow","Green","Blue"]
+angles = [45,90,135,180]
+factors = ["0.5X", "0.5Y", "0.5Y", "2X", "2Y", "2XY"]
+operations = ["+1","+2","+3","-1","-2","-3","x2","x3","d2","d3"]
+colours = ["Red","Orange","Yellow","Green","Blue","Purple"]
 reflections = ["X","Y"]
+add = sub = [1,2,3]
+mul = div = [2,3]
 train_1 = []
 train_2 = []
 test = []
 transformations = ["Counting", "Resize", "Colour", "Reflect", "2DRotation"]
+suffixes = (
+    f"train_0_input.png",f"train_0_output.png",f"train_1_input.png",f"train_1_output.png",
+    f"test_0_input.png",f"test_mc_0_input.png",f"test_mc_1_input.png",f"test_mc_2_input.png"
+    )
+    
 
 out_directory = output_directory
 if not os.path.isdir(out_directory):
@@ -68,15 +88,32 @@ elif trials <= sublist_len and trials > 0:
     train_1,train_2,test = create_sets(trials)
 else:
     raise ValueError(f"The maximum number of trials possible is {sublist_len}.")
-    
-def save_image(image_path, transformation, param, index, file_suffix):
-    with Image.open(image_path) as image:
-        file_path = os.path.join(out_directory, f"{transformation}{param}_{index}_{file_suffix}")
-        image.save(file_path)
 
-def save_processed_image(image, transformation, param, index, file_suffix):
-    file_path = os.path.join(out_directory, f"{transformation}{param}_{index}_{file_suffix}")
-    image.save(file_path)
+def crop(image_input):
+    if isinstance(image_input, str):
+        img = Image.open(image_input)
+    elif isinstance(image_input, Image.Image):
+        img = image_input
+    
+    new_size = min(img.size)
+    left = (img.width - new_size) / 2
+    top = (img.height - new_size) / 2
+    right = (img.width + new_size) / 2
+    bottom = (img.height + new_size) / 2
+    cropped = img.crop((left, top, right, bottom))
+    
+    return cropped
+
+def save_image(image_input, transformation, param, index, file_suffix):
+    for image, suffix in zip(image_input,file_suffix):
+        cropped = crop(image)
+        file_path = os.path.join(out_directory, f"{transformation}{param}_{index}_{suffix}")
+        cropped.save(file_path)
+
+def selector(to_exclude, parameters, num):
+    filtered = [parameter for parameter in parameters if parameter != to_exclude]
+    selected = random.sample(filtered,num)
+    return selected  
 
 def reflect_image(img_path, axis):
     with Image.open(img_path) as image:
@@ -85,37 +122,64 @@ def reflect_image(img_path, axis):
         elif axis == 'X':
             flipped_image = image.transpose(Image.FLIP_TOP_BOTTOM)
         else:
-            raise ValueError("Axis must be 'X' or 'Y'")
+            raise ValueError("Invalid Parameter")
         return flipped_image
 
 def rotate_image(img_path, angle):
+    if not isinstance(angle,int):
+        raise ValueError("Invalid Parameter")
     with Image.open(img_path) as image:
-        rotated_image = image.rotate(angle, expand=True)
+        rotated_image = image.rotate(-angle, expand=True)
         return rotated_image
 
-def resize(img_path, factor):
+def resize(img_path, factor, original = False):
+    if factor not in factors:
+        raise ValueError("Invalid Parameter")
+    
+    resize_factor = re.findall(r'[\d.]+', factor)[0]
+    axis = re.findall(r'[A-Za-z]+', factor)[0]
+    if "." in resize_factor:
+        resize_factor = 0.5 
+    else:
+        resize_factor = 2  
+    
+    initial_shrink_factor = 0.5
+    
+    factor_x = factor_y = initial_shrink_factor  
+    if not original:
+        if axis == "X":
+            factor_x *= resize_factor
+        elif axis == "Y":
+            factor_y *= resize_factor 
+        elif axis == "XY": 
+            factor_x *= resize_factor
+            factor_y *= resize_factor
+    
     with Image.open(img_path) as img:
-        new_size = (int(img.width * factor), int(img.height * factor))
+        new_size = (int(img.width * factor_x), int(img.height * factor_y))
         resized_img = img.resize(new_size, Image.LANCZOS)
         
         background = Image.new('RGB', (img.width, img.height), (255, 255, 255))
-
+        
         upper_left_x = (background.width - resized_img.width) // 2
         upper_left_y = (background.height - resized_img.height) // 2
-
+        
         background.paste(resized_img, (upper_left_x, upper_left_y))
-
+        
         return background
+
 
 def colour_change(img_path, colour_name):
     colour_map = {
-        'red': (255, 0, 0, 200),  
-        'yellow': (255, 255, 0, 200),
-        'green': (0, 128, 0, 200), 
-        'blue': (0, 0, 255, 200)  
+        'Red': (255, 0, 0, 200),  
+        'Orange': (255, 165, 0, 200),
+        'Yellow': (255, 255, 0, 200),
+        'Green': (0, 128, 0, 200), 
+        'Blue': (0, 0, 255, 200),
+        'Purple': (128, 0,128,200)
     }
 
-    colour = colour_map.get(colour_name.lower())
+    colour = colour_map.get(colour_name)
     if colour is None:
         raise ValueError(f"Color '{colour_name}' is not one of the defined colors.")
     
@@ -139,123 +203,177 @@ def colour_change(img_path, colour_name):
                     pixels[x, y] = new_color
                 else:
                     pixels[x, y] = original_pixel
-
     return result_img
+
+
+
+def count_builder(oper):
+    if oper not in operations:
+        raise ValueError("Invalid Parameter")
+    num = int(oper[1:])
+    math_operations = {
+        '+': operator.add,
+        '-': operator.sub,
+        'x': operator.mul,
+        'd': operator.truediv
+    }
+    if oper.startswith('x'):
+        starting = [1,2,3]
+        math = mul
+        math_op = math_operations['x']
+        math_op_2 = math_operations['x']
+        mc1 = selector(num, math, 1)[0]
+        mc2 = 4
+    elif oper.startswith('+'):
+        starting = [1,2,3,4,5]
+        math = add
+        math_op = math_op_2 = math_operations['+']
+        mc1, mc2 = selector(num, math, 2)
+    elif oper.startswith('-'):
+        starting = [9,8,7,6,5]
+        math = sub
+        math_op = math_op_2 = math_operations['-']
+        mc1, mc2 = selector(num, math, 2)
+    else:
+        math_op = math_operations['d']
+        math_op_2 = math_operations['+']
+        math = div
+        mc1 = selector(num, math, 1)[0]
+        mc2 = num+2
+        if num%2 == 0:
+            starting = [6,4,2]
+        else:
+            starting = [9,6,3]
+    train1, train2, test_0 = random.sample(starting,3)
+    train1_out = math_op(train1, num)
+    train2_out = math_op(train2, num)
+    test_out = math_op(test_0, num)
+    test_mc1_out = math_op_2(test_0,mc1)
+    test_mc2_out = math_op_2(test_0,mc2)
+    return (train1,train1_out,train2,train2_out,test_0,test_out,test_mc1_out,test_mc2_out) 
     
-def counting(img_path, operation, objects_per_row=3):
-    with Image.open(img_path) as img:
-        if operation.startswith('x'):
-            num_objects = int(operation[1:])
-        elif operation.startswith('+'):
-            num_objects = int(operation[1:]) + 1
-        else:
-            num_objects = 1 
+def count_generator(img_path, num):
+    num = int(num)
+    img = crop(img_path)
+    canvas = Image.new('RGBA', (img.width, img.height), (0, 0, 0, 0))
+    max_items_per_row = int((10 ** 0.5) + 1)
+    item_size = min(img.width, img.height) // max_items_per_row
+    
+    for i in range(num):
+        x = (i % max_items_per_row) * item_size
+        y = (i // max_items_per_row) * item_size
+        shrunken_img = img.resize((item_size, item_size), Image.LANCZOS)
+        mask = None
+        canvas.paste(shrunken_img, (x, y), mask)
+    
+    return canvas
 
-        num_rows = (num_objects + objects_per_row - 1) // objects_per_row
-        num_columns = min(num_objects, objects_per_row)
-        
-        new_width = img.width * num_columns
-        new_height = img.height * num_rows
-        
-        background = Image.new('RGB', (new_width, new_height), (255, 255, 255))
-        
-        for i in range(num_objects):
-            row = i // objects_per_row
-            column = i % objects_per_row
-            offset_x = img.width * column
-            offset_y = img.height * row
-            background.paste(img, (offset_x, offset_y))
-        
-        return background
+def transform_save_count(index, param, next_index=0):
+    results = count_builder(param)
+    images = (
+        train_1[index],train_1[index],train_2[index],train_2[index],
+        test[index],test[index],test[index],test[index]
+    )
+    inputs = [None]*8
+    for i in range(8):
+        inputs[i] = count_generator(images[i],results[i])
+    save_image(inputs, "Counting", param, index + next_index, suffixes)
+    
+def transform_save_colour(index, param, inputs, next_index):
+    processed_train1_in = colour_change(train_1[index], inputs[0])
+    processed_train1_out = colour_change(train_1[index], param)
+    processed_train2_in = colour_change(train_2[index],inputs[1])
+    processed_train2_out = colour_change(train_2[index], param)
+    processed_test = colour_change(test[index], inputs[2])
+    processed_test_mc_0 = colour_change(test[index], param)
+    processed_test_mc_1 = colour_change(test[index], inputs[3])
+    processed_test_mc_2 = colour_change(test[index], inputs[4])
+    save_inputs = (
+        processed_train1_in, processed_train1_out, processed_train2_in, processed_train2_out,
+        processed_test, processed_test_mc_0, processed_test_mc_1, processed_test_mc_2
+        )
+    save_image(save_inputs,"Colour", param, index+next_index, suffixes)
+    
+def transform_save_resize(index, param, inputs, next_index):
+    processed_1_in = resize(train_1[index], param, original=True)
+    processed_1 = resize(train_1[index], param)
+    processed_2_in = resize(train_2[index], param, original=True)
+    processed_2 = resize(train_2[index], param)
+    processed_test = resize(test[index], param, original=True)
+    processed_mc_0 = resize(test[index], param)
+    processed_mc_1 = resize(test[index], inputs[0])
+    processed_mc_2 = resize(test[index], inputs[1])
+    save_inputs = (
+        processed_1_in, processed_1, processed_2_in, processed_2, 
+        processed_test, processed_mc_0, processed_mc_1, processed_mc_2
+        )
+    save_image(save_inputs, "Resize", param, index+next_index, suffixes)
 
-def select_colour(exclude_colour, colours=colours):
-    filtered_colours = [color_name for color_name in colours if color_name != exclude_colour]
-    selected_colours = random.sample(filtered_colours, 3)
-    return selected_colours[0], selected_colours[1], selected_colours[2]
+def transform_save_reflect(index, param, false_axis, angle, next_index):
+    processed_1 = reflect_image(train_1[index], param)
+    processed_2 = reflect_image(train_2[index], param)
+    processed_mc_0 = reflect_image(test[index], param)
+    processed_mc_1 = reflect_image(test[index], false_axis)
+    processed_mc_2 = rotate_image(test[index], angle)
+    save_inputs = (
+        train_1[index], processed_1, train_2[index], processed_2, 
+        test[index], processed_mc_0, processed_mc_1, processed_mc_2
+        )
+    save_image(save_inputs, "Reflect", param, index+next_index, suffixes)
 
-def modify_operation(operation):
-    if operation.startswith('-'):
-        return '+' + operation[1:]
-    elif operation.startswith('/'):
-        return 'x' + operation[1:]
-    else:
-        return operation
+def transform_save_rotate(index, param, inputs, next_index):
+    processed_train1_in = rotate_image(train_1[index], inputs[0])
+    processed_train1_out = rotate_image(train_1[index], inputs[0]+param)
+    processed_train2_in = rotate_image(train_2[index],inputs[1])
+    processed_train2_out = rotate_image(train_2[index], inputs[1]+param)
+    processed_test = rotate_image(test[index], inputs[2])
+    processed_test_mc_0 = rotate_image(test[index], inputs[2]+param)
+    processed_test_mc_1 = rotate_image(test[index], inputs[2]+inputs[3])
+    processed_test_mc_2 = rotate_image(test[index], inputs[2]+inputs[4])
+    save_inputs = (
+        processed_train1_in, processed_train1_out, processed_train2_in, processed_train2_out,
+        processed_test, processed_test_mc_0, processed_test_mc_1, processed_test_mc_2
+        )
+    save_image(save_inputs,"2DRotation", param, index+next_index, suffixes)
 
-def select(x,list):
-    filtered_numbers = [a for a in list if a != x]
-    selection = random.sample(filtered_numbers, 2)
-    return selection[0],selection[1]
-
-def transform_save(index, transformation, param, process_image, mc_1, mc_2, next_index=0, input_colour=None, mod=False, reflect=False):
-    train_sets = [train_1, train_2]
-    original_suffix = "output.png" if mod else "input.png"
-    processed_suffix = "input.png" if mod else "output.png"
-
-    for i, train_set in enumerate(train_sets, start=1):
-        image_path = train_set[index]
-        processing_param = input_colour if input_colour is not None else param
-        
-        processed_in = process_image(image_path, processing_param)
-        processed_out = process_image(image_path, param) if input_colour is not None else processed_in
-        
-        save_processed_image(processed_in, transformation, processing_param, index + next_index, f"train_{i}_{original_suffix}")
-        save_processed_image(processed_out, transformation, param, index + next_index, f"train_{i}_{processed_suffix}")
-        
-        if input_colour is None:
-            save_image(image_path, transformation, param, index + next_index, f"train_{i}_{original_suffix}")
-
-    test_image_path = test[index]
-    if input_colour is None:
-        save_image(test_image_path, transformation, param, index + next_index, f"test_0_{original_suffix}")
-    else:
-        processed_test = process_image(test_image_path, input_colour)
-        save_processed_image(processed_test, transformation, param, index + next_index, f"test_0_{original_suffix}")
-
-    for mc_index, mc_param in enumerate([param, mc_1, mc_2], start=0):
-        if reflect and mc_param == mc_2:
-            processed = rotate_image(test_image_path, mc_2)
-        else:
-            processed = process_image(test_image_path, mc_param)
-        suffix = "input.png" if mod and mc_index == 0 else f"mc_{mc_index}_output.png" if mod else f"mc_{mc_index}_input.png"
-        save_processed_image(processed, transformation, param, index + next_index, f"test_{suffix}")
 
 if transformation not in transformation:
     raise ValueError(f"Transformation not found")
 
-if transformation == "Reflect":
+elif transformation == "Reflect":
     axis = parameter
     false_axis = "Y" if axis == "X" else "X"
-    angle = random.choice(angles[:-1])
+    angle = random.choice(angles)
     for i in range(sublist_len):
-        transform_save(i, "Reflect", axis, reflect_image, false_axis, angle, next_index, reflect = True)
+        angle = random.choice(angles)
+        transform_save_reflect(i, axis, false_axis, angle, next_index)
+        
 elif transformation == "Colour":
-    colour = parameter
-    colour_mc_1,colour_mc_2, in_colour = select_colour(colour,colours)
+    colour = parameter 
     for i in range(sublist_len):
-        transform_save(i, "Colour", colour, colour_change, colour_mc_1, colour_mc_2, next_index, in_colour)
+        train1, train2, test_0, colour_mc_1,colour_mc_2 = selector(colour,colours,5)
+        input_params = (train1,train2,test_0,colour_mc_1,colour_mc_2)
+        transform_save_colour(i, colour, input_params, next_index)
+        
 elif transformation == "Resize":
     factor = parameter
     for i in range(sublist_len):
-        if factor > 1:
-            factor_mc_1,factor_mc_2 = select(np.round(1/factor, decimals = 2),factors[:4])
-            transform_save(i, "Resize", np.round(1/factor, decimals = 2), resize, factor_mc_1, factor_mc_2, next_index, mod=True)
-        else:
-            factor_mc_1,factor_mc_2 = select(factor,factors[:4])
-            transform_save(i, "Resize", factor, resize, factor_mc_1, factor_mc_2, next_index)
+        factor_mc_1,factor_mc_2 = selector(factor,factors, 2)
+        input_params = (factor_mc_1,factor_mc_2)
+        print(input_params)
+        transform_save_resize(i, factor, input_params, next_index)
+            
 elif transformation == "2DRotation":
     angle = parameter
-    angle_mc_1, angle_mc_2 = select(angle,angles)
     for i in range(sublist_len):
-        transform_save(i, "2DRotation", angle, rotate_image, angle_mc_1, angle_mc_2, next_index)
+        angle_mc_1, angle_mc_2 = selector(angle, angles, 2)
+        train1, train2, test_0 = random.sample(angles, 3)
+        input_params = (train1,train2,test_0,angle_mc_1,angle_mc_2)
+        transform_save_rotate(i, angle, input_params, next_index)
+        
 else:
-    operation_mc_1 = "+5"
-    operation_mc_2 = "x4"
     operation = parameter
     for i in range(sublist_len):
-        if operation.startswith('-') or operation.startswith('/'):
-            new_oper = modify_operation(operation)
-            selection = random.sample(operations_1, 2)
-            transform_save(i, "Counting", new_oper, counting, operation_mc_1, operation_mc_2, next_index, mod=True)
-        else:
-            transform_save(i, "Counting", operation, counting, operation_mc_1, operation_mc_2, next_index)
+        transform_save_count(i, operation, next_index)
+    
     
