@@ -89,10 +89,15 @@ elif trials <= sublist_len and trials > 0:
 else:
     raise ValueError(f"The maximum number of trials possible is {sublist_len}.")
 
-def save_mc(mc1,mc2):
+def save_txt(train_0_in,train_0_out,train_1_in,train_1_out,test_in,mc1,mc2):
     with open("output.txt", "w") as file:
-            file.write(f'mc_1: {mc1}\n')
-            file.write(f'mc_2: {mc2}\n')
+        file.write(f'train_0_input: {train_0_in}\n')
+        file.write(f'train_0_output: {train_0_out}\n')
+        file.write(f'train_1_input: {train_1_in}\n')
+        file.write(f'train_1_output: {train_1_out}\n')
+        file.write(f'test_input: {test_in}\n')
+        file.write(f'mc_1: {mc1}\n')
+        file.write(f'mc_2: {mc2}\n')
 
 def crop(image_input):
     if isinstance(image_input, str):
@@ -257,7 +262,8 @@ def count_builder(oper):
     test_out = math_op(test_0, num)
     test_mc1_out = math_op_2(test_0,mc1)
     test_mc2_out = math_op_2(test_0,mc2)
-    save_mc(math_op_name+str(mc1),math_op_2_name+str(mc2))
+    save_txt(train1,train1_out,train2,train2_out,
+        test_out,test_mc1_out,test_mc2_out)
     return (train1,train1_out,train2,train2_out,test_0,test_out,test_mc1_out,test_mc2_out) 
     
 def count_generator(img_path, num):
@@ -301,7 +307,7 @@ def transform_save_colour(index, param, inputs, next_index):
         processed_test, processed_mc_0, processed_mc_1, processed_mc_2
         )
     save_image(save_inputs,"Colour", param, index+next_index, suffixes)
-    save_mc(inputs[3],inputs[4])
+    save_txt(inputs[0],param,inputs[1],param,inputs[2],inputs[3],inputs[4])
     
 def transform_save_resize(index, param, inputs, next_index):
     processed_1_in = resize(train_1[index], param, original=True)
@@ -317,7 +323,7 @@ def transform_save_resize(index, param, inputs, next_index):
         processed_test, processed_mc_0, processed_mc_1, processed_mc_2
         )
     save_image(save_inputs, "Resize", param, index+next_index, suffixes)
-    save_mc(inputs[0],inputs[1])
+    save_txt(" ",param," ",param," ",inputs[0],inputs[1])
 
 def transform_save_reflect(index, param, false_axis, angle, next_index):
     processed_1 = reflect_image(train_1[index], param)
@@ -330,7 +336,7 @@ def transform_save_reflect(index, param, false_axis, angle, next_index):
         test[index], processed_mc_0, processed_mc_1, processed_mc_2
         )
     save_image(save_inputs, "Reflect", param, index+next_index, suffixes)
-    save_mc(false_axis,angle)
+    save_txt(" ",param," ",param," ",false_axis,angle)
 
 def transform_save_rotate(index, param, inputs, next_index):
     processed_1_in = rotate_image(train_1[index], inputs[0])
@@ -346,7 +352,7 @@ def transform_save_rotate(index, param, inputs, next_index):
         processed_test, processed_mc_0, processed_mc_1, processed_mc_2
         )
     save_image(save_inputs,"2DRotation", param, index+next_index, suffixes)
-    save_mc(inputs[3],inputs[4])
+    save_txt(inputs[0],inputs[0]+param,inputs[1],inputs[1]+param,inputs[2],inputs[2]+inputs[3],inputs[2]+inputs[4])
 
 
 if transformation not in transformation:
