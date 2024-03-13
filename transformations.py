@@ -26,7 +26,7 @@ Transformations:
         
 "Colour": Colour Change
     Parameters: 
-        "Red", "Orange, "Yellow", "Green", "Blue", "Purple"
+        "Red", "Yellow", "Green", "Blue", "Purple", "Grey"
         
 "Reflect": Reflect along the X or Y axis
     Parameters: 
@@ -36,20 +36,19 @@ Transformations:
     Parameters: 
         45, 90, 135,180
 '''
-
-input_directory = " "
-output_directory = " "
+input_directory = "/Users/charliewong/Downloads/Objects16"
+output_directory = "/Users/charliewong/Downloads/test"
 next_index = 0
-trials = None
-transformation = " "
-parameter = " "
+trials = 1
+transformation = "Counting"
+parameter = "+3"
 
 # ------------------------------------------------------------------------------------------------
 
 angles = [45,90,135,180]
 factors = ["0.5X", "0.5Y", "0.5Y", "2X", "2Y", "2XY"]
 operations = ["+1","+2","+3","-1","-2","-3","x2","x3","d2","d3"]
-colours = ["Red","Orange","Yellow","Green","Blue","Purple"]
+colours = ["Red","Yellow","Green","Blue","Purple","Grey"]
 reflections = ["X","Y"]
 add = sub = [1,2,3]
 mul = div = [2,3]
@@ -71,7 +70,9 @@ in_directory = input_directory
 entries = os.listdir(in_directory)
 paths = [os.path.join(in_directory, entry) for entry in entries]
 filtered_paths = [path for path in paths if not path.endswith(".DS_Store")]
-filtered_paths = filtered_paths[:-(len(filtered_paths)%3)]
+remainder = len(filtered_paths) % 3
+if remainder != 0:
+    filtered_paths = filtered_paths[:-(remainder)]
 sublist_len = int(len(filtered_paths)/3)
 
 def create_sets(trials):
@@ -90,7 +91,7 @@ else:
     raise ValueError(f"The maximum number of trials possible is {sublist_len}.")
 
 def save_txt(train_0_in,train_0_out,train_1_in,train_1_out,test_in,mc1,mc2):
-    with open("output.txt", "w") as file:
+    with open(f"output_{transformation}{parameter}.txt", "a") as file:
         file.write(f'train_0_input: {train_0_in}\n')
         file.write(f'train_0_output: {train_0_out}\n')
         file.write(f'train_1_input: {train_1_in}\n')
@@ -118,7 +119,7 @@ def save_image(image_input, transformation, param, index, file_suffix):
     for image, suffix in zip(image_input,file_suffix):
         cropped = crop(image)
         file_path = os.path.join(out_directory, f"{transformation}{param}_{index}_{suffix}")
-        cropped.save(file_path)
+        cropped.save(file_path,format="PNG")
 
 def selector(to_exclude, parameters, num):
     filtered = [parameter for parameter in parameters if parameter != to_exclude]
@@ -139,7 +140,7 @@ def rotate_image(img_path, angle):
     if not isinstance(angle,int):
         raise ValueError("Invalid Parameter")
     with Image.open(img_path) as image:
-        rotated_image = image.rotate(-angle, expand=True)
+        rotated_image = image.rotate(-angle, expand=False)
         return rotated_image
 
 def resize(img_path, factor, original = False):
@@ -169,12 +170,20 @@ def resize(img_path, factor, original = False):
         new_size = (int(img.width * factor_x), int(img.height * factor_y))
         resized_img = img.resize(new_size, Image.LANCZOS)
         
-        background = Image.new('RGB', (img.width, img.height), (255, 255, 255))
+        if img.mode == 'RGBA' or (img.mode == 'P' and 'transparency' in img.info):
+            # Create a transparent background instead of white
+            background = Image.new('RGBA', (img.width, img.height), (255, 255, 255, 0))
+        else:
+            # For non-transparent images, create a white background
+            background = Image.new('RGB', (img.width, img.height), (255, 255, 255))
         
         upper_left_x = (background.width - resized_img.width) // 2
         upper_left_y = (background.height - resized_img.height) // 2
         
-        background.paste(resized_img, (upper_left_x, upper_left_y))
+        if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
+            background.paste(resized_img, (upper_left_x, upper_left_y), resized_img)
+        else:
+            background.paste(resized_img, (upper_left_x, upper_left_y))
         
         return background
 
@@ -182,14 +191,17 @@ def resize(img_path, factor, original = False):
 def colour_change(img_path, colour_name):
     colour_map = {
         'Red': (255, 0, 0, 200),  
-        'Orange': (255, 165, 0, 200),
         'Yellow': (255, 255, 0, 200),
         'Green': (0, 128, 0, 200), 
         'Blue': (0, 0, 255, 200),
-        'Purple': (128, 0,128,200)
+        'Purple': (128, 0,128,200),
     }
-
-    colour = colour_map.get(colour_name)
+    
+    #fix thiscondition, raise valueerror if its anything but whats in colours
+    if colour_name != "Grey":
+        colour = colour_map.get(colour_name) 
+    else:
+        colour = "Grey"           
     if colour is None:
         raise ValueError(f"Color '{colour_name}' is not one of the defined colors.")
     
@@ -202,15 +214,23 @@ def colour_change(img_path, colour_name):
         for x in range(width):
             for y in range(height):
                 original_pixel = img.getpixel((x, y))
-                
                 if original_pixel[3] > 0: 
-                    new_color = (
-                        int((original_pixel[0] + colour[0]) / 2),
-                        int((original_pixel[1] + colour[1]) / 2),
-                        int((original_pixel[2] + colour[2]) / 2),
-                        original_pixel[3],
-                    )
-                    pixels[x, y] = new_color
+                    if colour != "Grey":
+                        new_colour = (
+                            int((original_pixel[0] + colour[0]) / 2),
+                            int((original_pixel[1] + colour[1]) / 2),
+                            int((original_pixel[2] + colour[2]) / 2),
+                            original_pixel[3],
+                        )
+                    else:
+                        luminance = int(original_pixel[0] * 0.299 + original_pixel[1] * 0.587 + original_pixel[2] * 0.114)
+                        new_colour = (
+                            luminance,
+                            luminance,
+                            luminance,
+                            original_pixel[3],
+                        )
+                    pixels[x, y] = new_colour
                 else:
                     pixels[x, y] = original_pixel
     return result_img
@@ -227,43 +247,36 @@ def count_builder(oper):
     }
     if oper.startswith('x'):
         starting = [1,2,3]
-        math = mul
-        math_op_name = math_op_2_name = 'x'
-        math_op = math_op_2 = math_operations['x']
-        mc1 = selector(num, math, 1)[0]
-        mc2 = 4
+        math_op_name = 'x'
+        math_op = math_operations['x']
     elif oper.startswith('+'):
         starting = [1,2,3,4,5]
-        math = add
-        math_op_name = math_op_2_name = '+'
-        math_op = math_op_2 = math_operations['+']
-        mc1, mc2 = selector(num, math, 2)
+        math_op_name = '+'
+        math_op = math_operations['+']
     elif oper.startswith('-'):
         starting = [9,8,7,6,5]
-        math = sub
-        math_op_name = math_op_2_name = '-'
-        math_op = math_op_2 = math_operations['-']
-        mc1, mc2 = selector(num, math, 2)
+        math_op_name = '-'
+        math_op = math_operations['-']
     else:
         math_op_name = 'd'
-        math_op_2_name = '+'
         math_op = math_operations['d']
-        math_op_2 = math_operations['+']
-        math = div
-        mc1 = selector(num, math, 1)[0]
-        mc2 = num+2
         if num%2 == 0:
             starting = [6,4,2]
         else:
             starting = [9,6,3]
+    mc1_op = math_operations["+"]
+    mc2_op = math_operations["-"]
     train1, train2, test_0 = random.sample(starting,3)
     train1_out = math_op(train1, num)
     train2_out = math_op(train2, num)
     test_out = math_op(test_0, num)
-    test_mc1_out = math_op_2(test_0,mc1)
-    test_mc2_out = math_op_2(test_0,mc2)
+    print(test_out)
+    test_mc1_out = mc1_op(test_out,1)
+    print(test_mc1_out)
+    test_mc2_out = mc2_op(test_out,1)
+    print(test_mc2_out)
     save_txt(train1,train1_out,train2,train2_out,
-        test_out,test_mc1_out,test_mc2_out)
+        test_0,"+1","-1")
     return (train1,train1_out,train2,train2_out,test_0,test_out,test_mc1_out,test_mc2_out) 
     
 def count_generator(img_path, num):
@@ -336,7 +349,7 @@ def transform_save_reflect(index, param, false_axis, angle, next_index):
         test[index], processed_mc_0, processed_mc_1, processed_mc_2
         )
     save_image(save_inputs, "Reflect", param, index+next_index, suffixes)
-    save_txt(" ",param," ",param," ",false_axis,angle)
+    save_txt("0",param,"0",param,"0",false_axis,angle)
 
 def transform_save_rotate(index, param, inputs, next_index):
     processed_1_in = rotate_image(train_1[index], inputs[0])
@@ -352,8 +365,7 @@ def transform_save_rotate(index, param, inputs, next_index):
         processed_test, processed_mc_0, processed_mc_1, processed_mc_2
         )
     save_image(save_inputs,"2DRotation", param, index+next_index, suffixes)
-    save_txt(inputs[0],inputs[0]+param,inputs[1],inputs[1]+param,inputs[2],inputs[2]+inputs[3],inputs[2]+inputs[4])
-
+    save_txt(inputs[0],inputs[0]+param,inputs[1],inputs[1]+param,inputs[2],inputs[3],inputs[4])
 
 if transformation not in transformation:
     raise ValueError(f"Transformation not found")
@@ -361,9 +373,10 @@ if transformation not in transformation:
 elif transformation == "Reflect":
     axis = parameter
     false_axis = "Y" if axis == "X" else "X"
-    angle = random.choice(angles)
+    reflect_angles = [45,90,135]
+    angle = random.choice(reflect_angles)
     for i in range(sublist_len):
-        angle = random.choice(angles)
+        angle = random.choice(reflect_angles)
         transform_save_reflect(i, axis, false_axis, angle, next_index)
         
 elif transformation == "Colour":
@@ -378,13 +391,12 @@ elif transformation == "Resize":
     for i in range(sublist_len):
         factor_mc_1,factor_mc_2 = selector(factor,factors, 2)
         input_params = (factor_mc_1,factor_mc_2)
-        print(input_params)
         transform_save_resize(i, factor, input_params, next_index)
             
 elif transformation == "2DRotation":
     angle = parameter
     for i in range(sublist_len):
-        angle_mc_1, angle_mc_2 = selector(angle, angles, 2)
+        angle_mc_1, angle_mc_2 = selector(angle, angles[:-1], 2)
         train1, train2, test_0 = random.sample(angles, 3)
         input_params = (train1,train2,test_0,angle_mc_1,angle_mc_2)
         transform_save_rotate(i, angle, input_params, next_index)
@@ -393,5 +405,4 @@ else:
     operation = parameter
     for i in range(sublist_len):
         transform_save_count(i, operation, next_index)
-    
     
